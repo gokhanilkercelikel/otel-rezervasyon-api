@@ -1,12 +1,14 @@
 const express = require("express");
 
 const app = express();
-
 app.use(express.json());
 
-// Railway sunucusunun çalıştığını kontrol etmek için
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+
 app.get("/", (req, res) => {
-  res.status(200).send("WhatsApp API çalışıyor.");
+  res.status(200).send("Otel rezervasyon robotu çalışıyor.");
 });
 
 // Meta webhook doğrulaması
@@ -15,14 +17,7 @@ app.get("/webhook", (req, res) => {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  const verifyToken = process.env.VERIFY_TOKEN;
-
-  if (!verifyToken) {
-    console.error("VERIFY_TOKEN Railway üzerinde tanımlanmamış.");
-    return res.sendStatus(500);
-  }
-
-  if (mode === "subscribe" && token === verifyToken) {
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
     console.log("Webhook başarıyla doğrulandı.");
     return res.status(200).send(challenge);
   }
@@ -31,65 +26,66 @@ app.get("/webhook", (req, res) => {
   return res.sendStatus(403);
 });
 
-// Meta tarafından gönderilen WhatsApp olaylarını alma
-app.post("/webhook", (req, res) => {
-  // Meta'ya isteğin alındığını hemen bildir
+async function mesajGonder(alici, mesaj) {
+  const response = await fetch(
+    `https://graph.facebook.com/v26.0/${PHONE_NUMBER_ID}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: alici,
+        type: "text",
+        text: {
+          body: mesaj,
+        },
+      }),
+    }
+  );
+
+  const sonuc = await response.json();
+
+  if (!response.ok) {
+    throw new Error(JSON.stringify(sonuc));
+  }
+
+  console.log("Otomatik cevap gönderildi:", sonuc);
+}
+
+// Gelen WhatsApp mesajları
+app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
 
-  try {
-    const body = req.body;
+  console.log("Webhook POST isteği geldi.");
 
-    if (body.object !== "whatsapp_business_account") {
-      console.log("WhatsApp dışı webhook olayı alındı.");
+  try {
+    const mesaj =
+      req.body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+
+    if (!mesaj) {
+      console.log("Kullanıcı mesajı bulunamadı.");
       return;
     }
 
-    const entries = body.entry || [];
+    const telefon = mesaj.from;
+    const metin =
+      mesaj.type === "text" ? mesaj.text?.body || "" : "";
 
-    for (const entry of entries) {
-      const changes = entry.changes || [];
+    console.log("Gelen mesaj:", telefon, metin);
 
-      for (const change of changes) {
-        const value = change.value || {};
-        const messages = value.messages || [];
-
-        for (const message of messages) {
-          const senderNumber = message.from;
-          const messageType = message.type;
-
-          let messageContent = "";
-
-          if (messageType === "text") {
-            messageContent = message.text?.body || "";
-          } else if (messageType === "interactive") {
-            messageContent =
-              message.interactive?.button_reply?.title ||
-              message.interactive?.list_reply?.title ||
-              "";
-          } else {
-            messageContent = `[${messageType} türünde mesaj]`;
-          }
-
-          console.log("Yeni WhatsApp mesajı:", {
-            senderNumber,
-            messageType,
-            messageContent,
-          });
-
-          // Daha sonra buraya şu işlemleri ekleyeceğiz:
-          // 1. Flow verilerini işleme
-          // 2. Oda fiyatı hesaplama
-          // 3. Google Sheets'e rezervasyon kaydetme
-          // 4. Canlı desteğe bildirim gönderme
-        }
-      }
-    }
-  } catch (error) {
-    console.error("Webhook işlenirken hata oluştu:", error);
+    await mesajGonder(
+      telefon,
+      "🛎️ Mersin Otel Rezervasyon Sistemine Hoş Geldiniz.\n\nRezervasyon işleminizi başlatmak için hazırız."
+    );
+  } catch (hata) {
+    console.error("Webhook hatası:", hata.message);
   }
 });
 
-// Railway PORT değişkenini otomatik verir
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, "0.0.0.0", () => {

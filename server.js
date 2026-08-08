@@ -12,35 +12,28 @@ app.get("/", (req, res) => {
 });
 
 app.get("/privacy", (req, res) => {
-  res.status(200).send(`
-    <!DOCTYPE html>
-    <html lang="tr">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Gizlilik Politikası | Otel Rezervasyon Asistanı</title>
-    </head>
-    <body style="max-width:800px;margin:40px auto;padding:20px;font-family:Arial;line-height:1.6;color:#222;">
-      <h1>Gizlilik Politikası</h1>
-      <p>Son güncelleme: 9 Ağustos 2026</p>
-
-      <h2>Toplanan Bilgiler</h2>
-      <p>Otel Rezervasyon Asistanı; WhatsApp üzerinden iletilen ad, soyad, telefon numarası, konaklama tarihleri, kişi sayısı, oda tercihi ve rezervasyon mesajlarını işleyebilir.</p>
-
-      <h2>Kullanım Amacı</h2>
-      <p>Bilgiler yalnızca rezervasyon taleplerini yanıtlamak, fiyat ve oda bilgisi sunmak, müşteri desteği sağlamak ve rezervasyon işlemlerini yürütmek amacıyla kullanılır.</p>
-
-      <h2>Bilgilerin Paylaşılması</h2>
-      <p>Kişisel bilgiler yasal zorunluluklar dışında üçüncü kişilere satılmaz. Bilgiler yalnızca hizmetin yürütülmesi için yetkili otel personeli ve gerekli teknik hizmet sağlayıcıları tarafından işlenebilir.</p>
-
-      <h2>Saklama ve Silme</h2>
-      <p>Bilgiler hizmetin gerektirdiği süre ve yasal yükümlülükler kapsamında saklanır. Kullanıcılar WhatsApp destek hattı üzerinden bilgilerinin silinmesini talep edebilir.</p>
-
-      <h2>İletişim</h2>
-      <p>Gizlilik ve veri silme talepleriniz için hizmet aldığınız işletmenin WhatsApp destek hattından bize ulaşabilirsiniz.</p>
-    </body>
-    </html>
-  `);
+  res.type("html").status(200).send([
+    "<!DOCTYPE html>",
+    "<html lang='tr'><head>",
+    "<meta charset='UTF-8'>",
+    "<meta name='viewport' content='width=device-width, initial-scale=1'>",
+    "<title>Gizlilik Politikası</title>",
+    "</head>",
+    "<body style='max-width:800px;margin:40px auto;padding:20px;font-family:Arial;line-height:1.6;color:#222'>",
+    "<h1>Gizlilik Politikası</h1>",
+    "<p>Son güncelleme: 9 Ağustos 2026</p>",
+    "<h2>Toplanan Bilgiler</h2>",
+    "<p>WhatsApp üzerinden iletilen iletişim, konaklama ve rezervasyon bilgileri işlenebilir.</p>",
+    "<h2>Kullanım Amacı</h2>",
+    "<p>Bilgiler rezervasyon taleplerini yanıtlamak, oda ve fiyat bilgisi sunmak ve müşteri desteği sağlamak amacıyla kullanılır.</p>",
+    "<h2>Bilgilerin Paylaşılması</h2>",
+    "<p>Kişisel bilgiler satılmaz ve yalnızca hizmetin yürütülmesi için gerekli taraflarla paylaşılır.</p>",
+    "<h2>Saklama ve Silme</h2>",
+    "<p>Kullanıcılar WhatsApp destek hattı üzerinden bilgilerinin silinmesini talep edebilir.</p>",
+    "<h2>İletişim</h2>",
+    "<p>Gizlilik talepleriniz için işletmenin WhatsApp destek hattından bize ulaşabilirsiniz.</p>",
+    "</body></html>"
+  ].join(""));
 });
 
 // Meta webhook doğrulaması
@@ -65,7 +58,7 @@ async function mesajGonder(alici, mesaj) {
       method: "POST",
       headers: {
         Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
         messaging_product: "whatsapp",
@@ -73,9 +66,9 @@ async function mesajGonder(alici, mesaj) {
         to: alici,
         type: "text",
         text: {
-          body: mesaj,
-        },
-      }),
+          body: mesaj
+        }
+      })
     }
   );
 
@@ -91,7 +84,6 @@ async function mesajGonder(alici, mesaj) {
 // Gelen WhatsApp mesajları
 app.post("/webhook", async (req, res) => {
   res.sendStatus(200);
-
   console.log("Webhook POST isteği geldi.");
 
   try {

@@ -6,6 +6,12 @@ app.use(express.json());
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+const WHATSAPP_FLOW_ID =
+  process.env.WHATSAPP_FLOW_ID || "1323064102863512";
+const WHATSAPP_FLOW_MODE =
+  process.env.WHATSAPP_FLOW_MODE || "draft";
+const GOOGLE_SHEETS_WEBHOOK_URL =
+  process.env.GOOGLE_SHEETS_WEBHOOK_URL || "";
 
 const oturumlar = new Map();
 const demoCevaplari = new Map();
@@ -142,6 +148,105 @@ async function mesajGonder(alici, mesaj) {
   console.log("Otomatik cevap gönderildi.");
 }
 
+async function rezervasyonFlowuGonder(alici) {
+  if (demoCevaplari.has(alici) || !WHATSAPP_FLOW_ID) {
+    return false;
+  }
+
+  const response = await fetch(
+    `https://graph.facebook.com/v26.0/${PHONE_NUMBER_ID}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: alici,
+        type: "interactive",
+        interactive: {
+          type: "flow",
+          header: {
+            type: "text",
+            text: "Mersin Dorel Marin Otel"
+          },
+          body: {
+            text:
+              "Oda seçeneklerini incelemek, fiyat bilgisi almak ve " +
+              "rezervasyon talebi oluşturmak için aşağıdaki butona dokunun."
+          },
+          footer: {
+            text: "Rezervasyon kesinleşmeden ödeme talep edilmez."
+          },
+          action: {
+            name: "flow",
+            parameters: {
+              flow_message_version: "3",
+              flow_token: `dorel_${Date.now()}_${alici}`,
+              flow_id: WHATSAPP_FLOW_ID,
+              flow_cta: "Rezervasyon Yap",
+              mode: WHATSAPP_FLOW_MODE,
+              flow_action: "navigate",
+              flow_action_payload: {
+                screen: "WELCOME_SCREEN"
+              }
+            }
+          }
+        }
+      })
+    }
+  );
+
+  const sonuc = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Flow gönderilemedi: ${JSON.stringify(sonuc)}`);
+  }
+
+  console.log("WhatsApp rezervasyon Flow'u gönderildi.");
+  return true;
+}
+
+async function flowRezervasyonunuKaydet(telefon, rezervasyon) {
+  const kayit = {
+    kayit_zamani: new Date().toISOString(),
+    kaynak: "WhatsApp Flow",
+    telefon,
+    ...rezervasyon
+  };
+
+  console.log("WHATSAPP_FLOW_REZERVASYON:", kayit);
+
+  if (!GOOGLE_SHEETS_WEBHOOK_URL) {
+    console.log(
+      "GOOGLE_SHEETS_WEBHOOK_URL tanımlı değil; kayıt yalnızca loglara yazıldı."
+    );
+    return false;
+  }
+
+  try {
+    const response = await fetch(GOOGLE_SHEETS_WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(kayit)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Google Sheets HTTP ${response.status}`);
+    }
+
+    console.log("Rezervasyon Google Sheets'e kaydedildi.");
+    return true;
+  } catch (hata) {
+    console.error("Google Sheets kayıt hatası:", hata.message);
+    return false;
+  }
+}
+
 function metniTemizle(metin) {
   return String(metin || "")
     .trim()
@@ -184,6 +289,20 @@ async function anaMenuGonder(telefon) {
 }
 
 async function rezervasyonBaslat(telefon) {
+  if (!demoCevaplari.has(telefon)) {
+    try {
+      const flowGonderildi = await rezervasyonFlowuGonder(telefon);
+
+      if (flowGonderildi) {
+        oturumlar.set(telefon, { adim: "flow_bekleniyor" });
+        return;
+      }
+    } catch (hata) {
+      console.error("Flow başlatma hatası:", hata.message);
+      console.log("Yazılı rezervasyon akışına geçiliyor.");
+    }
+  }
+
   oturumlar.set(telefon, { adim: "kisi_secimi" });
   await mesajGonder(telefon, KISI_SECIMI);
 }
@@ -772,6 +891,27 @@ app.post("/webhook", async (req, res) => {
     }
 
     const telefon = mesaj.from;
+
+    if (
+      mesaj.type === "interactive" &&
+      mesaj.interactive?.type === "nfm_reply"
+    ) {
+      const responseJson =
+        mesaj.interactive.nfm_reply.response_json || "{}";
+      const rezervasyon = JSON.parse(responseJson);
+
+      await flowRezervasyonunuKaydet(telefon, rezervasyon);
+      oturumlar.delete(telefon);
+
+      await mesajGonder(
+        telefon,
+        "✅ *Rezervasyon talebiniz alınmıştır.*\n\n" +
+        "Müsaitlik ve fiyat kontrolünün ardından otel yetkilimiz " +
+        "sizinle iletişime geçecektir.\n\n" +
+        "Ana menü için *MENU* yazabilirsiniz."
+      );
+      return;
+    }
 
     if (mesaj.type !== "text") {
       await mesajGonder(
